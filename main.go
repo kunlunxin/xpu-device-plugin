@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"syscall"
+	"fmt"
 
 	"github.com/fsnotify/fsnotify"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
@@ -71,8 +72,23 @@ restart:
 		p.Stop()
 
 		// Just continue if there are no devices to serve for plugin p.
-		if len(p.Devices()) == 0 {
+		devs := p.Devices()
+		if len(devs) == 0 {
 			continue
+		}
+
+		// Update ResourceName by model
+		if *useDetailResName {
+			model := devs[0].Model
+			for _, dev := range devs {
+				// hybrid model(K200 or R200) or type(PF or VF) between xpus on one host is not support now, goto restart
+				if model != dev.Model {
+					log.Fatalf("All devs on node must be the same model or VF spec, but get: %s and %s", model, dev.Model)
+					close(pluginStartError)
+					goto events
+				}
+			}
+			p.resourceName = fmt.Sprintf("baidu.com/%s", model)
 		}
 
 		// Start the gRPC server for plugin p and connect it with the kubelet.
